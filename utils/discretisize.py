@@ -19,7 +19,7 @@ def simple_discretize(data, n_bins=10):
     """
     data = np.array(data)
 
-    bin_edges = np.linspace(data.min(), data.max(), n_bins + 1)
+    bin_edges = np.linspace(data.min(), data.max(), n_bins)
 
     symbols = np.digitize(data, bin_edges[1:], right=True) + 1
     return symbols, bin_edges
@@ -104,16 +104,50 @@ def adaptative_bins_discretize(x, M=10, K=3):
     # add boundaries between neighboring pre-divisions that both got ≥1 bin
     for k in range(1, K):
         if alloc[k - 1] > 0 and alloc[k] > 0:
-            edges.append(coarse_edges[k])
+            edges.append(coarse_edges[k - 1])
+
+    if len(edges) < M:
+        edges.append(coarse_edges[K])
 
     edges = np.array(sorted(edges))
-    # ensure exactly M-1 edges (very rare mismatch → pad/drop)
-    # if edges.size < M - 1:
-    #     filler = np.linspace(xmin, xmax, (M - 1 - edges.size) + 2)[1:-1]
-    #     edges = np.sort(np.unique(np.concatenate([edges, filler])))
-    # elif edges.size > M - 1:
-    #     edges = np.sort(edges)[: M - 1]
+    # ensure exactly M+1 edges by splitting largest gaps / merging smallest gaps
+    target = M
 
+    # helper to get augmented boundaries and gap sizes
+    def _aug_and_diffs(ed):
+        aug = np.concatenate(([xmin], ed, [xmax]))
+        diffs = np.diff(aug)  # gaps between consecutive boundaries
+        return aug, diffs
+
+    # If we have too few edges: repeatedly insert the midpoint of the largest gap
+    safety = 10_000
+    while edges.size < target and safety > 0:
+        safety -= 1
+        aug, diffs = _aug_and_diffs(edges)
+        i = int(np.argmax(diffs))  # gap between aug[i] and aug[i+1]
+        a, b = aug[i], aug[i + 1]
+        mid = 0.5 * (a + b)
+        # guard against degenerate gaps
+        if not np.isfinite(mid) or mid <= a or mid >= b:
+            break
+        edges = np.sort(np.append(edges, mid))
+
+    # If we have too many edges: repeatedly remove the edge with the smallest local gap
+    # "local gap" for an interior edge e_j is min(e_j - left, right - e_j)
+    safety = 10_000
+    while edges.size > target and safety > 0 and edges.size > 0:
+        safety -= 1
+        # compute local gaps per interior edge
+        lefts = np.concatenate(([xmin], edges[:-1]))
+        rights = np.concatenate((edges[1:], [xmax]))
+        local_min_gap = np.minimum(edges - lefts, rights - edges)
+
+        # pick the edge whose local min gap is the smallest; remove it
+        j = int(np.argmin(local_min_gap))
+        edges = np.delete(edges, j)
+
+    # final tidy-up
+    edges = np.clip(np.unique(np.sort(edges)), xmin, xmax)
     # 5) symbols (q_Ω): map each x_i to 1..M using the thresholds
     symbols = np.digitize(x, edges, right=True) + 1
     return edges, symbols, alloc
@@ -128,7 +162,7 @@ def save_float_vocab(edges, name_encoding="edges_ex.fvocab"):
 
 def encode_with_float_vocab(data, name_encoding="edges_ex.fvocab"):
     global vocab_path
-    file_path = f"{vocab_path}/{name_encoding}"
+    file_path = fr"{vocab_path}\{name_encoding}"
     with open(file_path, "r") as f:
         first_line = f.readline().strip()
         assert first_line.startswith("N=")
@@ -142,7 +176,7 @@ def encode_with_float_vocab(data, name_encoding="edges_ex.fvocab"):
 
 def decode_with_float_vocab(symbols, name_encoding="edges_ex.fvocab"):
     global vocab_path
-    file_path = f"{vocab_path}/{name_encoding}"
+    file_path = fr"{vocab_path}\{name_encoding}"
     with open(file_path, "r") as f:
         first_line = f.readline().strip()
         assert first_line.startswith("N=")

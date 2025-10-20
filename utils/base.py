@@ -88,9 +88,10 @@ class Tokenizer:
 
     def _build_vocab(self):
         # vocab is simply and deterministically derived from merges
-        vocab = {idx: idx for idx in range(self.actual_vocab_size)}
+        vocab = {idx: idx for idx in range(1,self.actual_vocab_size + 1)}
         for (p0, p1), idx in self.merges.items():
-            vocab[idx] = vocab[p0] + vocab[p1]
+            print("building vocab", (p0, p1), "->", idx)
+            vocab[idx] = idx #vocab[p0] + vocab[p1]
         for special, idx in self.special_tokens.items():
             vocab[idx] = encode_with_float_vocab(special)
         return vocab
@@ -103,7 +104,7 @@ class Tokenizer:
         - vocab file is just a pretty printed version for human inspection only
         """
         # write the model: to be used in load() later
-        model_file = file_prefix + ".model"
+        model_file = fr".\model\{file_prefix}"+".model"
         with open(model_file, 'w') as f:
             # write the version, pattern and merges, that's all that's needed
             f.write("minbpe v1\n")
@@ -116,7 +117,7 @@ class Tokenizer:
             for idx1, idx2 in self.merges:
                 f.write(f"{idx1} {idx2}\n")
         # write the vocab: for the human to look at
-        vocab_file = file_prefix + ".vocab"
+        vocab_file = fr".\vocab\{file_prefix}"+".vocab"
         inverted_merges = {idx: pair for pair, idx in self.merges.items()}
         with open(vocab_file, "w") as f:
             for idx, token in self.vocab.items():
@@ -125,7 +126,7 @@ class Tokenizer:
                 # errors='replace' to replace them with the replacement char �.
                 # this also means that we couldn't possibly use .vocab in load()
                 # because decoding in this way is a lossy operation!
-                if token > self.actual_vocab_size:
+                if token > self.actual_vocab_size + 1:
                     new_tokens = self.search_recursively_tokens(token)
                     s, n_edges = decode_with_float_vocab(new_tokens, encoding_name)
                 else:
@@ -149,7 +150,7 @@ class Tokenizer:
         # read the model file
         merges = {}
         special_tokens = {}
-        idx = self.actual_vocab_size
+        idx = self.actual_vocab_size + 1
         with open(model_file, 'r') as f:
             # read the version
             version = f.readline().strip()

@@ -30,19 +30,20 @@ class BasicTokenizer(Tokenizer):
 
         # iteratively merge the most common pairs to create new tokens
         merges = {} # (int, int) -> int
-        vocab = {idx: idx for idx in range(self.actual_vocab_size)} # int -> bytes
-        for i in range(num_merges):
+        vocab = {idx: idx for idx in range(1,self.actual_vocab_size + 1)} # int -> bytes
+        for i in range(1, num_merges + 1):
             # count up the number of times every consecutive pair appears
             stats = get_stats(ids)
             # find the pair with the highest count
             pair = max(stats, key=stats.get)
+            print("pair", pair, "index", i)
             # mint a new token: assign it the next available id
             idx = self.actual_vocab_size + i
             # replace all occurrences of pair in ids with idx
             ids = merge(ids, pair, idx)
             # save the merge
             merges[pair] = idx
-            vocab[idx] = vocab[pair[0]] + vocab[pair[1]]
+            vocab[idx] =  idx #vocab[pair[0]] + vocab[pair[1]]
             # prints
             if verbose:
                 print(f"merge {i+1}/{num_merges}: {pair} -> {idx} ({vocab[idx]}) had {stats[pair]} occurrences")

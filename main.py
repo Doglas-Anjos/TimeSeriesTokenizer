@@ -124,25 +124,30 @@ vocab_size = 2200
 num_merges = vocab_size - N
 edges, symbols, alloc = adaptative_bins_discretize(y_standard_scaled, M=N, K=6)
 y_scaled = [round(float(element[0]), 5) for element in y_standard_scaled]
-save_float_vocab(edges.tolist(), "adaptative_bins.fvocab")
-symbols_2 = encode_with_float_vocab(y_scaled, "adaptative_bins.fvocab")
-numbers_of_symbols, n_edges = decode_with_float_vocab(symbols_2, "adaptative_bins.fvocab")
+# save_float_vocab(edges.tolist(), "adaptative_bins.fvocab")
+# symbols_2 = encode_with_float_vocab(y_scaled, "adaptative_bins.fvocab")
+# numbers_of_symbols, n_edges = decode_with_float_vocab(symbols_2, "adaptative_bins.fvocab")
+# ObjTok = BasicTokenizer(N,"adaptative_bins.fvocab")
+# ObjTok.train(y_scaled, vocab_size, verbose=True)
+# ObjTok.save("adaptative_bins_tokenizer", "adaptative_bins.fvocab")
+# Encoded_data = ObjTok.encode(y_scaled[:1000])
+# Decoded_data = ObjTok.decode(Encoded_data)
+#
+
 ObjTok = BasicTokenizer(N,"adaptative_bins.fvocab")
-ObjTok.train(y_scaled, vocab_size, verbose=True)
-ObjTok.save("adaptative_bins_tokenizer", "adaptative_bins.fvocab")
+ObjTok.load("adaptative_bins_tokenizer.model")
 Encoded_data = ObjTok.encode(y_scaled[:1000])
 Decoded_data = ObjTok.decode(Encoded_data)
 
 
-
-df_n = pd.DataFrame([y_scaled, numbers_of_symbols[0]]).T
-symb_list = symbols.tolist()
-stats = get_stats(symb_list)
-top_pair = max(stats, key=stats.get)
-print(sorted(((v, k) for k, v in stats.items()), reverse=True))
-merge_symb, ids = merge_tokens(num_merges, symbols.tolist(), N=N)
-len_old_tokens = len(symb_list)
-len_new_tokens = len(ids)
-
-print(f"Compression rate: {len_old_tokens/len_new_tokens:.2f} ({len_old_tokens} -> {len_new_tokens})")
+# df_n = pd.DataFrame([y_scaled, numbers_of_symbols[0]]).T
+# symb_list = symbols.tolist()
+# stats = get_stats(symb_list)
+# top_pair = max(stats, key=stats.get)
+# print(sorted(((v, k) for k, v in stats.items()), reverse=True))
+# merge_symb, ids = merge_tokens(num_merges, symbols.tolist(), N=N)
+# len_old_tokens = len(symb_list)
+# len_new_tokens = len(ids)
+#
+# print(f"Compression rate: {len_old_tokens/len_new_tokens:.2f} ({len_old_tokens} -> {len_new_tokens})")
 pass
