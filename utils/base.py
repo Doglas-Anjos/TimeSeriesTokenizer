@@ -66,12 +66,12 @@ def render_token(t, encoding_name) -> str:
 class Tokenizer:
     """Base class for Tokenizers"""
 
-    def __init__(self, actual_vocab_size):
+    def __init__(self, actual_vocab_size, special_tokens=None):
         # default: vocab size of 256 (all bytes), no merges, no patterns
         self.merges = {} # (int, int) -> int
         self.pattern = "" # str
         self.actual_vocab_size = actual_vocab_size
-        self.special_tokens = {} # str -> int, e.g. {'<|endoftext|>': 100257}
+        self.special_tokens = special_tokens if special_tokens else {} # str -> int, e.g. {'<|endoftext|>': 100257}
         self.vocab = self._build_vocab() # int -> bytes
 
     def train(self, list_values, target_vocab_size, verbose=False):
@@ -93,7 +93,7 @@ class Tokenizer:
             print("building vocab", (p0, p1), "->", idx)
             vocab[idx] = idx #vocab[p0] + vocab[p1]
         for special, idx in self.special_tokens.items():
-            vocab[idx] = encode_with_float_vocab(special)
+            vocab[idx] = idx
         return vocab
 
     def save(self, file_prefix, encoding_name):
@@ -128,15 +128,15 @@ class Tokenizer:
                 # because decoding in this way is a lossy operation!
                 if token > self.actual_vocab_size + 1:
                     new_tokens = self.search_recursively_tokens(token)
-                    s, n_edges = decode_with_float_vocab(new_tokens, encoding_name)
+                    s, n_edges = decode_with_float_vocab(new_tokens, encoding_name, special_tokens=self.special_tokens)
                 else:
-                    s, n_edges = decode_with_float_vocab([token], encoding_name)
+                    s, n_edges = decode_with_float_vocab([token], encoding_name, special_tokens=self.special_tokens)
                 # find the children of this token, if any
                 if idx in inverted_merges:
                     # if this token has children, render it nicely as a merge
                     idx0, idx1 = inverted_merges[idx]
-                    s0, n_edges_s0 = decode_with_float_vocab([self.vocab[idx0]], encoding_name)
-                    s1, n_edges_s1 = decode_with_float_vocab([self.vocab[idx1]], encoding_name)
+                    s0, n_edges_s0 = decode_with_float_vocab([self.vocab[idx0]], encoding_name, special_tokens=self.special_tokens)
+                    s1, n_edges_s1 = decode_with_float_vocab([self.vocab[idx1]], encoding_name, special_tokens=self.special_tokens)
                     f.write(f"[{s0}][{s1}] -> [{s}] {idx}\n")
                 else:
                     # otherwise this is leaf token, just print it

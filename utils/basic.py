@@ -15,17 +15,18 @@ from utils.discretisize import decode_with_float_vocab, encode_with_float_vocab
 
 class BasicTokenizer(Tokenizer):
 
-    def __init__(self, actual_vocab_size, encoding_name="exemple.fvocab"):
+    def __init__(self, actual_vocab_size, encoding_name="exemple.fvocab", special_tokens=None):
         self.encoding_name = encoding_name
         self.actual_vocab_size = actual_vocab_size
-        super().__init__(actual_vocab_size)
+        self.special_tokens = special_tokens
+        super().__init__(actual_vocab_size, special_tokens)
 
     def train(self, list_values, target_vocab_size, verbose=False):
         assert target_vocab_size >= self.actual_vocab_size
         num_merges = target_vocab_size - self.actual_vocab_size
 
         # input text preprocessing
-        text_bytes = encode_with_float_vocab(list_values, self.encoding_name) # raw bytes
+        text_bytes = encode_with_float_vocab(list_values, self.encoding_name, special_tokens=self.special_tokens) # raw bytes
         ids = list(text_bytes) # list of integers in range 0..255
 
         # iteratively merge the most common pairs to create new tokens
@@ -60,12 +61,12 @@ class BasicTokenizer(Tokenizer):
                 list_with_tokens.extend(self.search_recursively_tokens(id_))
             else:
                 list_with_tokens.append(id_)
-        text, n_edges = decode_with_float_vocab(list_with_tokens, self.encoding_name)
+        text, n_edges = decode_with_float_vocab(list_with_tokens, self.encoding_name, special_tokens=self.special_tokens)
         return text
 
     def encode(self, text):
         # given a string text, return the token ids
-        text_bytes = encode_with_float_vocab(text, self.encoding_name) # raw bytes
+        text_bytes = encode_with_float_vocab(text, self.encoding_name, special_tokens=self.special_tokens) # raw bytes
         ids = list(text_bytes) # list of integers in range 0..255
         while len(ids) >= 2:
             # find the pair with the lowest merge index

@@ -6,3 +6,4 @@ images/
 model/
 float_vocab/
 vocab/
+scalers/
