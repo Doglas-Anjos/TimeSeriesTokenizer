@@ -7,3 +7,5 @@ model/
 float_vocab/
 vocab/
 scalers/
+chronos_csv/
+chronos_processed/

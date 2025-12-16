@@ -186,6 +186,36 @@ def save_float_vocab(edges, name_encoding="edges_ex.fvocab"):
         f.write(f"N={len(edges)+1}\n")
         f.write(",".join(f"{x:.5f}" for x in edges))
 
+def load_float_vocab(name_encoding="edges_ex.fvocab"):
+    """
+    Load bin edges from a .fvocab file.
+    
+    Parameters:
+    -----------
+    name_encoding : str
+        Path to the .fvocab file (can be relative or absolute)
+    
+    Returns:
+    --------
+    edges : np.array
+        Array of bin edges
+    """
+    global vocab_path
+    
+    # Handle both absolute and relative paths
+    if os.path.isabs(name_encoding):
+        file_path = name_encoding
+    else:
+        file_path = fr"{vocab_path}\{name_encoding}"
+    
+    with open(file_path, "r") as f:
+        first_line = f.readline().strip()
+        assert first_line.startswith("N=")
+        edges_line = f.readline().strip()
+        edges = np.array([float(x) for x in edges_line.split(",")])
+    
+    return edges
+
 def encode_with_float_vocab(data, name_encoding="edges_ex.fvocab", special_tokens=None):
     global vocab_path
     file_path = fr"{vocab_path}\{name_encoding}"
@@ -250,25 +280,28 @@ def decode_with_float_vocab(symbols, name_encoding="edges_ex.fvocab", special_to
     return decoded, n_edges
 
 
-def mark_special_tokens(df, special_tokens, hours):
+def mark_special_tokens(df, special_tokens,hour_toks, data_freq='1H'):
     df = df.copy()
     df["date"] = pd.to_datetime(df["date"])
 
     pad_token = special_tokens.get("pad", "<PAD>")
     ebos_token = special_tokens.get("ebos", "<EBOS>")
 
-    # 1) Reindex hourly to expose gaps (we'll fill them with <PAD>)
-    full_idx = pd.date_range(df["date"].min(), df["date"].max(), freq="1H")
+    # 1) Remove duplicates before reindexing (keep first occurrence)
+    df = df.drop_duplicates(subset=["date"], keep="first")
+    
+    # 2) Reindex to expose gaps (we'll fill them with <PAD>)
+    full_idx = pd.date_range(df["date"].min(), df["date"].max(), freq=data_freq)
     df = df.set_index("date").reindex(full_idx)
     df.index.name = "date"
     df.reset_index(inplace=True)
 
-    # 2) Fill missing rows with <PAD>
+    # 3) Fill missing rows with <PAD>
     value_cols = [c for c in df.columns if c != "date"]
     for c in value_cols:
         df[c] = df[c].where(df[c].notna(), pad_token)
 
-    # 3) Find the FIRST 00:00 present in the dataframe
+    # 4) Find the FIRST 00:00 present in the dataframe
     idx = df["date"]
     mid_mask = (idx.dt.hour == 0) & (idx.dt.minute == 0)
     if not mid_mask.any():
@@ -277,11 +310,11 @@ def mark_special_tokens(df, special_tokens, hours):
 
     first_midnight = idx.loc[mid_mask].iloc[0]
 
-    # 4) Mark every N hours starting from that first midnight (inclusive)
+    # 5) Mark every N hours starting from that first midnight (inclusive)
     elapsed_hours = ((idx - first_midnight) / np.timedelta64(1, "h")).astype("int64")
-    ebos_mask = (idx >= first_midnight) & (elapsed_hours % hours == 0)
+    ebos_mask = (idx >= first_midnight) & (elapsed_hours % hour_toks == 0)
 
-    # 5) Overwrite those rows with <EBOS>
+    # 6) Overwrite those rows with <EBOS>
     for c in value_cols:
         df.loc[ebos_mask, c] = ebos_token
 
