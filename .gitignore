@@ -9,3 +9,11 @@ vocab/
 scalers/
 chronos_csv/
 chronos_processed/
+tokenization_stats/
+results/
+results_trues/
+results_chronos/
+final_results/
+final_results_trues/
+final_results_chronos/
+comparison_tables/

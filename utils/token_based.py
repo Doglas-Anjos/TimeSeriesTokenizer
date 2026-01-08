@@ -66,6 +66,14 @@ class TokenBasedTokenizer(Tokenizer):
         >>> tokenizer = TokenBasedTokenizer(200, "vocab.fvocab", special_tokens)
         >>> tokenizer.train(tokens, target_vocab_size=1000, verbose=True)
         """
+        # Statistics configuration
+        # save_stats: Controls whether to save training statistics to files (summary and merge stats)
+        save_stats = True
+        
+        # stats_prefix: Prefix for statistics filenames, derived from encoding name
+        # Example: "ETTh1_N200_vocab1000_simple" -> files: ETTh1_N200_vocab1000_simple_summary.txt
+        stats_prefix = self.encoding_name.replace('.fvocab', '')
+        
         assert target_vocab_size >= self.actual_vocab_size
         num_merges = target_vocab_size - self.actual_vocab_size
 
@@ -75,6 +83,9 @@ class TokenBasedTokenizer(Tokenizer):
         else:
             ids = list(token_sequence)
         
+        # Store initial sequence length for compression rate calculation
+        initial_length = len(ids)
+        
         # Validate token range
         unique_tokens = set(ids)
         max_token = max(unique_tokens)
@@ -83,6 +94,9 @@ class TokenBasedTokenizer(Tokenizer):
             print(f"Adjusting actual_vocab_size to {max_token}")
             self.actual_vocab_size = max_token
 
+        # Track merge statistics
+        merge_stats_list = []  # List of (merge_number, token_pair, occurrence_count)
+        
         # iteratively merge the most common pairs to create new tokens
         merges = {} # (int, int) -> int
         vocab = {idx: idx for idx in range(1, self.actual_vocab_size + 1)} # int -> int
@@ -97,6 +111,7 @@ class TokenBasedTokenizer(Tokenizer):
                 
             # find the pair with the highest count
             pair = max(stats, key=stats.get)
+            occurrence_count = stats[pair]
             
             # mint a new token: assign it the next available id
             idx = self.actual_vocab_size + i + 1
@@ -108,19 +123,87 @@ class TokenBasedTokenizer(Tokenizer):
             merges[pair] = idx
             vocab[idx] = idx
             
+            # Track merge statistics (merge number, the token pair, and occurrence count)
+            merge_stats_list.append((i + 1, pair, occurrence_count))
+            
             # prints
             if verbose:
-                print(f"merge {i+1}/{num_merges}: {pair} -> {idx} had {stats[pair]} occurrences")
+                print(f"merge {i+1}/{num_merges}: {pair} -> {idx} had {occurrence_count} occurrences")
 
         # save class variables
         self.merges = merges # used in encode()
         self.vocab = vocab   # used in decode()
+        
+        # Calculate final statistics
+        final_length = len(ids)
+        compression_rate = initial_length / final_length if final_length > 0 else 0
         
         if verbose:
             print(f"\nTraining complete:")
             print(f"  Initial vocab size: {self.actual_vocab_size}")
             print(f"  Final vocab size: {self.actual_vocab_size + len(self.merges)}")
             print(f"  Number of merges: {len(self.merges)}")
+            print(f"  Compression Rate: {compression_rate:.2f}x")
+        
+        # Save statistics to files if requested
+        if save_stats and stats_prefix:
+            self._save_training_statistics(
+                initial_vocab=self.actual_vocab_size,
+                final_vocab=self.actual_vocab_size + len(self.merges),
+                num_merges=len(self.merges),
+                compression_rate=compression_rate,
+                merge_stats=merge_stats_list,
+                prefix=stats_prefix
+            )
+    
+    def _save_training_statistics(self, initial_vocab, final_vocab, num_merges, compression_rate, merge_stats, prefix):
+        """
+        Save training statistics to files.
+        
+        Parameters:
+        -----------
+        initial_vocab : int
+            Initial vocabulary size
+        final_vocab : int
+            Final vocabulary size after merges
+        num_merges : int
+            Number of merges performed
+        compression_rate : float
+            Compression rate achieved
+        merge_stats : list of tuples
+            List of (merge_number, token_pair, occurrence_count)
+        prefix : str
+            Prefix for output filenames
+        """
+        import os
+        
+        # Create stats directory if it doesn't exist
+        stats_dir = 'tokenization_stats'
+        os.makedirs(stats_dir, exist_ok=True)
+        
+        # Save summary statistics
+        summary_path = os.path.join(stats_dir, f"{prefix}_summary.txt")
+        with open(summary_path, 'w') as f:
+            f.write("TOKENIZATION TRAINING SUMMARY\n")
+            f.write("=" * 50 + "\n\n")
+            f.write(f"Initial vocab size: {initial_vocab}\n")
+            f.write(f"Final vocab size: {final_vocab}\n")
+            f.write(f"Number of merges: {num_merges}\n")
+            f.write(f"Compression Rate: {compression_rate:.4f}x\n")
+        
+        # Save merge statistics with token pairs
+        merge_stats_path = os.path.join(stats_dir, f"{prefix}_merge_stats.txt")
+        with open(merge_stats_path, 'w') as f:
+            f.write("MERGE STATISTICS\n")
+            f.write("=" * 50 + "\n")
+            f.write("Merge_Number=Token_Pair=Occurrence_Count\n\n")
+            for merge_num, token_pair, count in merge_stats:
+                # Format: 1=15,23=3600 (merge_num=token1,token2=count)
+                f.write(f"{merge_num}={token_pair[0]},{token_pair[1]}={count}\n")
+        
+        print(f"  Statistics saved to {stats_dir}/")
+        print(f"    - {prefix}_summary.txt")
+        print(f"    - {prefix}_merge_stats.txt")
 
     def encode(self, token_sequence):
         """

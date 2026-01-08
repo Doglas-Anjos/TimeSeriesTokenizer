@@ -16,13 +16,78 @@ from utils.token_based import TokenBasedTokenizer
 base_data_files = 'data/datasets/'
 base_data_file_out = 'data/outputs/chronos_vocab/'
 
+# Configuration: Set to True to save each column as individual CSV files, False for combined CSV
+SAVE_INDIVIDUAL_COLUMNS = True  # Toggle between individual column files or combined dataset
+
 # Dataset files to process
-list_of_files = ['ETTh1', 'ETTh2', 'ETTm1', 'ETTm2']
+list_of_files = ['ETTh1', 'wheather']
 
 # Special tokens configuration
 def get_special_tokens(N_samples):
     """Get special tokens for given N_samples."""
     return {'<PAD>': N_samples - 1, '<EBOS>': N_samples}
+
+
+def sanitize_filename(name):
+    """Sanitize string to make it safe for filenames."""
+    # Replace special characters with safe alternatives
+    replacements = {
+        '°': 'deg',
+        '²': '2',
+        '³': '3',
+        '�': '',  # Remove encoding error characters
+        '/': '_per_',
+        '%': 'pct',
+        '*': '',
+    }
+    for old, new in replacements.items():
+        name = name.replace(old, new)
+    
+    # Replace invalid characters with underscore
+    invalid_chars = '<>:"/\\|?*()[]{},\''
+    for char in invalid_chars:
+        name = name.replace(char, '_')
+    
+    # Replace spaces with underscores
+    name = name.replace(' ', '_')
+    
+    # Remove multiple consecutive underscores
+    while '__' in name:
+        name = name.replace('__', '_')
+    
+    # Remove leading/trailing underscores
+    name = name.strip('_')
+    return name
+
+
+def save_individual_column_file(column_name, column_data, base_filename, special_tokens):
+    """
+    Save a single column as an individual CSV file.
+    
+    Parameters:
+    -----------
+    column_name : str
+        Name of the column (will be used as header)
+    column_data : pd.Series
+        Column data to save
+    base_filename : str
+        Base filename without extension
+    special_tokens : dict
+        Dictionary of special tokens for padding
+    """
+    # Create dataframe with just this column (no index)
+    df_column = pd.DataFrame({column_name: column_data})
+    # Note: No PAD tokens needed for individual columns - each maintains natural length
+    # Drop NaN values to save only actual tokenized data
+    df_column = df_column.dropna()
+    
+    # Generate output path
+    safe_column_name = sanitize_filename(column_name)
+    output_path = os.path.join(base_data_file_out, f"{base_filename}_column_{safe_column_name}.csv")
+    
+    # Save without index
+    df_column.to_csv(output_path, index=False)
+    return output_path
 
 
 def find_chronos_vocab_files():
@@ -192,8 +257,9 @@ def process_file_with_chronos_vocab(file_path, file_name, vocab_info, configs_li
                 name=column
             )
             
-            # Save scaler
-            scaler_path = f"{scaler_dir}/{file_name}_N{N_samples}_column_{column}.pkl"
+            # Save scaler (sanitize column name for filename)
+            safe_column_name = sanitize_filename(column)
+            scaler_path = f"{scaler_dir}/{file_name}_N{N_samples}_column_{safe_column_name}.pkl"
             joblib.dump(scaler, scaler_path)
             
             # Tokenize using Chronos vocab
@@ -213,12 +279,21 @@ def process_file_with_chronos_vocab(file_path, file_name, vocab_info, configs_li
         for disc_type in ['simple', 'adaptative']:
             if not tokenized_dfs[disc_type].empty:
                 output_filename = f"{file_name}_chronos_vocab_N{N_samples}_V{total_vocab_size}_{disc_type}.csv"
-                output_path = os.path.join(base_data_file_out, output_filename)
                 
-                # Fill NaN with PAD token
-                df_tokenized = tokenized_dfs[disc_type].fillna(special_tokens['<PAD>'])
-                df_tokenized.to_csv(output_path, index=False)
-                print(f"    ✓ Saved: {output_filename}")
+                if SAVE_INDIVIDUAL_COLUMNS:
+                    # Save each column as a separate file
+                    base_filename = output_filename.replace('.csv', '')
+                    for column in tokenized_dfs[disc_type].columns:
+                        column_data = tokenized_dfs[disc_type][column]
+                        output_path = save_individual_column_file(column, column_data, base_filename, special_tokens)
+                        print(f"    ✓ Saved: {os.path.basename(output_path)}")
+                else:
+                    # Save as combined CSV (original behavior)
+                    output_path = os.path.join(base_data_file_out, output_filename)
+                    # Fill NaN with PAD token
+                    df_tokenized = tokenized_dfs[disc_type].fillna(special_tokens['<PAD>'])
+                    df_tokenized.to_csv(output_path, index=False)
+                    print(f"    ✓ Saved: {output_filename}")
 
 
 def main():

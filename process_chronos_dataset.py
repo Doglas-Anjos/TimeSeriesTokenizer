@@ -21,9 +21,9 @@ DIVISION_FACTOR = 10
 
 # Tokenization configurations: (N_samples, total_vocab_size)
 TOKENIZATION_CONFIGS = [
-    (50, 1000),
-    (100, 1000),
-    (200, 1000),
+    (50, 600),
+    (100, 600),
+    (200, 600),
 ]
 
 

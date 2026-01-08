@@ -47,7 +47,7 @@ list_of_samples = [lower_sampling, midium_sampling, high_sampling]
 N_samples = 202
 special_tokens = {'<PAD>':N_samples-1, '<EBOS>':N_samples}
 
-total_vocab_size = 1000
+total_vocab_size = 600
 division_factor = 10
 hour_context_size_24h = 24
 hour_context_size_12h = 12
@@ -56,19 +56,70 @@ num_merges = total_vocab_size - N_samples
 # Configuration: Set to True to use BPE encoding, False for discretization only
 USE_BPE = True  # Toggle between BPE mode and discretization-only mode
 
-list_of_files = [weather_data_file, ETTh1_data_file] #ETTh1_data_file, ETTh2_data_file, ETTm1_data_file, ETTm2_data_file   ]#, , exchange_rate_data_file]
+# Configuration: Set to True to save each column as individual CSV files, False for combined CSV
+SAVE_INDIVIDUAL_COLUMNS = True  # Toggle between individual column files or combined dataset
+
+list_of_files = [ETTh1_data_file, weather_data_file] #ETTh1_data_file, ETTh2_data_file, ETTm1_data_file, ETTm2_data_file   ]#, , exchange_rate_data_file]
+
+def save_individual_column_file(column_name, column_data, base_filename, special_tokens):
+    """
+    Save a single column as an individual CSV file.
+    
+    Parameters:
+    -----------
+    column_name : str
+        Name of the column (will be used as header)
+    column_data : pd.Series
+        Column data to save
+    base_filename : str
+        Base filename without extension
+    special_tokens : dict
+        Dictionary of special tokens for padding
+    """
+    # Create dataframe with just this column (no index)
+    df_column = pd.DataFrame({column_name: column_data})
+    # Note: No PAD tokens needed for individual columns - each maintains natural length
+    # Drop NaN values to save only actual tokenized data
+    df_column = df_column.dropna()
+    
+    # Generate output path
+    safe_column_name = sanitize_filename(column_name)
+    output_path = f"{base_data_file_out}{base_filename}_column_{safe_column_name}.csv"
+    
+    # Save without index
+    df_column.to_csv(output_path, index=False)
+    return output_path
+
 
 def sanitize_filename(name):
     """Sanitize string to make it safe for filenames."""
+    # Replace special characters with safe alternatives
+    replacements = {
+        '°': 'deg',
+        '²': '2',
+        '³': '3',
+        '�': '',  # Remove encoding error characters
+        '/': '_per_',
+        '%': 'pct',
+        '*': '',
+    }
+    for old, new in replacements.items():
+        name = name.replace(old, new)
+    
     # Replace invalid characters with underscore
-    invalid_chars = '<>:"/\\|?*()[]{},'
+    invalid_chars = '<>:"/\\|?*()[]{},\''
     for char in invalid_chars:
         name = name.replace(char, '_')
+    
+    # Replace spaces with underscores
+    name = name.replace(' ', '_')
+    
     # Remove multiple consecutive underscores
     while '__' in name:
         name = name.replace('__', '_')
-    # Remove leading/trailing underscores and spaces
-    name = name.strip('_ ')
+    
+    # Remove leading/trailing underscores
+    name = name.strip('_')
     return name
 
 def process_files(path_file, name_file):
@@ -87,18 +138,18 @@ def process_files(path_file, name_file):
     tokenized_dfs = {
         # BPE-encoded versions
         'standard_simp_sem_ebos_bpe': pd.DataFrame(),
-        'standard_adapt_sem_ebos_bpe': pd.DataFrame(),
+        #'standard_adapt_sem_ebos_bpe': pd.DataFrame(),
         'standard_simp_24h_bpe': pd.DataFrame(),
-        'standard_adapt_24h_bpe': pd.DataFrame(),
+        #'standard_adapt_24h_bpe': pd.DataFrame(),
         'standard_simp_12h_bpe': pd.DataFrame(),
-        'standard_adapt_12h_bpe': pd.DataFrame(),
+        #'standard_adapt_12h_bpe': pd.DataFrame(),
         # Discretization-only versions (no BPE)
         'standard_simp_sem_ebos_disc': pd.DataFrame(),
-        'standard_adapt_sem_ebos_disc': pd.DataFrame(),
+        #'standard_adapt_sem_ebos_disc': pd.DataFrame(),
         'standard_simp_24h_disc': pd.DataFrame(),
-        'standard_adapt_24h_disc': pd.DataFrame(),
+        #'standard_adapt_24h_disc': pd.DataFrame(),
         'standard_simp_12h_disc': pd.DataFrame(),
-        'standard_adapt_12h_disc': pd.DataFrame(),
+        #'standard_adapt_12h_disc': pd.DataFrame(),
     }
     
     # Create directory for scalers if it doesn't exist
@@ -148,8 +199,8 @@ def process_files(path_file, name_file):
             # Pass numeric data for discretization, special_token_series to identify positions
             y_simple_tok, bin_edges = simple_discretize(data, N_samples, special_token_series, special_tokens=special_tokens)
             
-            # Save vocabulary for discretization-only
-            base_name_disc = f"{name_file}_feature_Nsam_{N_samples}_column_{column}_{disc_type_simple}_{norm_type}_{ebos_suffix}"
+            # Save vocabulary for discretization-only (use sanitized column name)
+            base_name_disc = f"{name_file}_feature_Nsam_{N_samples}_column_{safe_column_name}_{disc_type_simple}_{norm_type}_{ebos_suffix}"
             save_float_vocab(bin_edges.tolist(), f"{base_name_disc}.fvocab")
             
             # Store discretization-only version (no BPE)
@@ -157,7 +208,7 @@ def process_files(path_file, name_file):
             
             # If USE_BPE is enabled, also create BPE-encoded version
             if USE_BPE:
-                base_name_bpe = f"{name_file}_feature_Nsam_{N_samples}_vocab_{total_vocab_size}_column_{column}_{disc_type_simple}_{norm_type}_{ebos_suffix}"
+                base_name_bpe = f"{name_file}_feature_Nsam_{N_samples}_vocab_{total_vocab_size}_column_{safe_column_name}_{disc_type_simple}_{norm_type}_{ebos_suffix}"
                 # Save vocabulary with vocab_size in name for BPE
                 save_float_vocab(bin_edges.tolist(), f"{base_name_bpe}.fvocab")
                 y_tokens_bpe = encode_token(y_simple_tok, base_name_bpe)
@@ -167,16 +218,16 @@ def process_files(path_file, name_file):
             # # Pass numeric data for discretization, special_token_series to identify positions
             # edges, y_adapt_tok, alloc = adaptative_bins_discretize(data, N=N_samples, K=division_factor, data_st=special_token_series, special_tokens=special_tokens)
             #
-            # # Save vocabulary for discretization-only
-            # base_name_disc = f"{name_file}_feature_Nsam_{N_samples}_column_{column}_{disc_type_adaptatice}_{norm_type}_{ebos_suffix}"
+            # # Save vocabulary for discretization-only (use sanitized column name)
+            # base_name_disc = f"{name_file}_feature_Nsam_{N_samples}_column_{safe_column_name}_{disc_type_adaptatice}_{norm_type}_{ebos_suffix}"
             # save_float_vocab(edges.tolist(), f"{base_name_disc}.fvocab")
             #
             # # Store discretization-only version (no BPE)
             # tokenized_dfs[f"{norm_type}_adapt_{ebos_suffix}_disc"][column] = pd.Series(y_adapt_tok)
             #
-            # # If USE_BPE is enabled, also create BPE-encoded version
+            # If USE_BPE is enabled, also create BPE-encoded version
             # if USE_BPE:
-            #     base_name_bpe = f"{name_file}_feature_Nsam_{N_samples}_vocab_{total_vocab_size}_column_{column}_{disc_type_adaptatice}_{norm_type}_{ebos_suffix}"
+            #     base_name_bpe = f"{name_file}_feature_Nsam_{N_samples}_vocab_{total_vocab_size}_column_{safe_column_name}_{disc_type_adaptatice}_{norm_type}_{ebos_suffix}"
             #     # Save vocabulary with vocab_size in name for BPE
             #     save_float_vocab(edges.tolist(), f"{base_name_bpe}.fvocab")
             #     y_tokens_bpe = encode_token(y_adapt_tok, base_name_bpe)
@@ -186,28 +237,37 @@ def process_files(path_file, name_file):
     output_configs = [
         # Discretization-only outputs (no BPE)
         ('standard_simp_sem_ebos_disc', f"{name_file}_disc_standard_simp_sem_ebos_N_Samp{N_samples}_SEM_BPE.csv"),
-        ('standard_adapt_sem_ebos_disc', f"{name_file}_disc_standard_adapt_sem_ebos_N_Samp{N_samples}_SEM_BPE.csv"),
+        #('standard_adapt_sem_ebos_disc', f"{name_file}_disc_standard_adapt_sem_ebos_N_Samp{N_samples}_SEM_BPE.csv"),
         ('standard_simp_24h_disc', f"{name_file}_disc_standard_simp_24h_N_Samp{N_samples}_SEM_BPE.csv"),
-        ('standard_adapt_24h_disc', f"{name_file}_disc_standard_adapt_24h_N_Samp{N_samples}_SEM_BPE.csv"),
+        #('standard_adapt_24h_disc', f"{name_file}_disc_standard_adapt_24h_N_Samp{N_samples}_SEM_BPE.csv"),
         ('standard_simp_12h_disc', f"{name_file}_disc_standard_simp_12h_N_Samp{N_samples}_SEM_BPE.csv"),
-        ('standard_adapt_12h_disc', f"{name_file}_disc_standard_adapt_12h_N_Samp{N_samples}_SEM_BPE.csv"),
+        #('standard_adapt_12h_disc', f"{name_file}_disc_standard_adapt_12h_N_Samp{N_samples}_SEM_BPE.csv"),
     ]
     
     # Add BPE-encoded outputs if enabled
     if USE_BPE:
         output_configs.extend([
             ('standard_simp_sem_ebos_bpe', f"{name_file}_bpe_standard_simp_sem_ebos_N_Samp{N_samples}_vocab_{total_vocab_size}_COM_BPE.csv"),
-            ('standard_adapt_sem_ebos_bpe', f"{name_file}_bpe_standard_adapt_sem_ebos_N_Samp{N_samples}_vocab_{total_vocab_size}_COM_BPE.csv"),
+            #('standard_adapt_sem_ebos_bpe', f"{name_file}_bpe_standard_adapt_sem_ebos_N_Samp{N_samples}_vocab_{total_vocab_size}_COM_BPE.csv"),
             ('standard_simp_24h_bpe', f"{name_file}_bpe_standard_simp_24h_N_Samp{N_samples}_vocab_{total_vocab_size}_COM_BPE.csv"),
-            ('standard_adapt_24h_bpe', f"{name_file}_bpe_standard_adapt_24h_N_Samp{N_samples}_vocab_{total_vocab_size}_COM_BPE.csv"),
+            #('standard_adapt_24h_bpe', f"{name_file}_bpe_standard_adapt_24h_N_Samp{N_samples}_vocab_{total_vocab_size}_COM_BPE.csv"),
             ('standard_simp_12h_bpe', f"{name_file}_bpe_standard_simp_12h_N_Samp{N_samples}_vocab_{total_vocab_size}_COM_BPE.csv"),
-            ('standard_adapt_12h_bpe', f"{name_file}_bpe_standard_adapt_12h_N_Samp{N_samples}_vocab_{total_vocab_size}_COM_BPE.csv"),
+            #('standard_adapt_12h_bpe', f"{name_file}_bpe_standard_adapt_12h_N_Samp{N_samples}_vocab_{total_vocab_size}_COM_BPE.csv"),
         ])
     
     for config_key, output_filename in output_configs:
-        df_tokenized = tokenized_dfs[config_key].fillna(special_tokens['<PAD>'])
-        df_tokenized.to_csv(f"{base_data_file_out}{output_filename}", index=False)
-        print(f"✓ Saved: {output_filename}")
+        if SAVE_INDIVIDUAL_COLUMNS:
+            # Save each column as a separate file
+            base_filename = output_filename.replace('.csv', '')
+            for column in tokenized_dfs[config_key].columns:
+                column_data = tokenized_dfs[config_key][column]
+                output_path = save_individual_column_file(column, column_data, base_filename, special_tokens)
+                print(f"✓ Saved: {os.path.basename(output_path)}")
+        else:
+            # Save as combined CSV (original behavior)
+            df_tokenized = tokenized_dfs[config_key].fillna(special_tokens['<PAD>'])
+            df_tokenized.to_csv(f"{base_data_file_out}{output_filename}", index=False)
+            print(f"✓ Saved: {output_filename}")
 
 
 def encode_token(data_list, base_name):
@@ -247,7 +307,7 @@ def process_all_files():
     global special_tokens, N_samples
     global total_vocab_size
     global USE_BPE 
-    for var in [True]:
+    for var in [False, True]:
         USE_BPE = var
         for file in list_of_files:
             for samp in list_of_samples:

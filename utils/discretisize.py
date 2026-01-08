@@ -263,10 +263,9 @@ def decode_with_float_vocab(symbols, name_encoding="edges_ex.fvocab", special_to
     bin_centers = 0.5 * (edges[:-1] + edges[1:])
     decoded = list()
     for s in symbols:
-        if special_tokens is not None:
-            if s in special_tokens.values():
-                decoded.append([key for key, value in special_tokens.items() if value == s][0])
-                continue
+        # Skip special tokens during decode (they don't represent float values)
+        if special_tokens is not None and s in special_tokens.values():
+            continue
         if 1 <= s <= len(bin_centers):
             decoded.append(float(bin_centers[s - 1]))
         else:
